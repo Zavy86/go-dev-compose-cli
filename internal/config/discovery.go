@@ -15,11 +15,11 @@ var defaultComposeFiles = []string{
 
 func FindComposeFile(targetDir string) (string, error) {
 	if targetDir == "" {
-		var err error
-		targetDir, err = os.Getwd()
+		pwd, err := os.Getwd()
 		if err != nil {
 			return "", err
 		}
+		targetDir = pwd
 	}
 
 	for _, filename := range defaultComposeFiles {

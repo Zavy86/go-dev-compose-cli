@@ -12,7 +12,7 @@ func main() {
 	composeFile, err := config.FindComposeFile("")
 	var services []config.ServiceInfo
 	var projectName string
-	dockerStatus := ""
+	var dockerStatus string
 
 	if err != nil {
 		dockerStatus += fmt.Sprintf("[red]Compose Error: %v[-]\n", err)

@@ -12,20 +12,22 @@ type ServiceInfo struct {
 	DependsOn []string
 }
 
-func LoadProject(filePath string) ([]ServiceInfo, string, error) {
+func LoadProject(filePath string) (services []ServiceInfo, projectName string, err error) {
 	ctx := context.Background()
 
-	project, err := loader.LoadWithContext(ctx, types.ConfigDetails{
+	var project *types.Project
+	project, err = loader.LoadWithContext(ctx, types.ConfigDetails{
 		WorkingDir: "",
 		ConfigFiles: []types.ConfigFile{
 			{Filename: filePath},
 		},
 	})
+
 	if err != nil {
 		return nil, "", err
 	}
 
-	var services []ServiceInfo
+	projectName = project.Name
 
 	for _, service := range project.Services {
 		var deps []string
@@ -39,5 +41,5 @@ func LoadProject(filePath string) ([]ServiceInfo, string, error) {
 		})
 	}
 
-	return services, project.Name, nil
+	return // naked return using named return values
 }

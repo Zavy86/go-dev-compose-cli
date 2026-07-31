@@ -180,7 +180,7 @@ func (d *Client) ComposeDown(ctx context.Context, writer io.Writer) error {
 	return cmd.Run()
 }
 
-func (d *Client) StartAllContainers(ctx context.Context) error {
+func (d *Client) eachContainer(ctx context.Context, action func(id string, state string, labels map[string]string) error) error {
 	res, err := d.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return err
@@ -188,62 +188,33 @@ func (d *Client) StartAllContainers(ctx context.Context) error {
 
 	for _, c := range res.Items {
 		if c.Labels["com.docker.compose.project"] == d.projectName {
-			if string(c.State) != "running" {
-				if _, err := d.cli.ContainerStart(ctx, c.ID, client.ContainerStartOptions{}); err != nil {
-					return err
-				}
+			if err := action(c.ID, string(c.State), c.Labels); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (d *Client) StartAllContainers(ctx context.Context) error {
+	return d.eachContainer(ctx, func(id string, state string, labels map[string]string) error {
+		if state != "running" {
+			_, err := d.cli.ContainerStart(ctx, id, client.ContainerStartOptions{})
+			return err
+		}
+		return nil
+	})
 }
 
 func (d *Client) StopAllContainers(ctx context.Context) error {
-	res, err := d.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
-	if err != nil {
-		return err
-	}
-
 	timeout := 10
-	for _, c := range res.Items {
-		if c.Labels["com.docker.compose.project"] == d.projectName {
-			if string(c.State) == "running" {
-				if _, err := d.cli.ContainerStop(ctx, c.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
-					return err
-				}
-			}
+	return d.eachContainer(ctx, func(id string, state string, labels map[string]string) error {
+		if state == "running" {
+			_, err := d.cli.ContainerStop(ctx, id, client.ContainerStopOptions{Timeout: &timeout})
+			return err
 		}
-	}
-	return nil
-}
-
-func (d *Client) StartContainer(ctx context.Context, serviceName string) error {
-	containerID, err := d.findContainerID(ctx, serviceName)
-	if err != nil {
-		return err
-	}
-	_, err = d.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
-	return err
-}
-
-func (d *Client) StopContainer(ctx context.Context, serviceName string) error {
-	containerID, err := d.findContainerID(ctx, serviceName)
-	if err != nil {
-		return err
-	}
-	timeout := 10
-	_, err = d.cli.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
-	return err
-}
-
-func (d *Client) RestartContainer(ctx context.Context, serviceName string) error {
-	containerID, err := d.findContainerID(ctx, serviceName)
-	if err != nil {
-		return err
-	}
-	timeout := 10
-	_, err = d.cli.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{Timeout: &timeout})
-	return err
+		return nil
+	})
 }
 
 func (d *Client) findContainerID(ctx context.Context, serviceName string) (string, error) {
@@ -261,6 +232,37 @@ func (d *Client) findContainerID(ctx context.Context, serviceName string) (strin
 		}
 	}
 	return "", fmt.Errorf("Container %s not found in %s project", serviceName, d.projectName)
+}
+
+func (d *Client) withContainer(ctx context.Context, serviceName string, action func(containerID string) error) error {
+	containerID, err := d.findContainerID(ctx, serviceName)
+	if err != nil {
+		return err
+	}
+	return action(containerID)
+}
+
+func (d *Client) StartContainer(ctx context.Context, serviceName string) error {
+	return d.withContainer(ctx, serviceName, func(containerID string) error {
+		_, err := d.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+		return err
+	})
+}
+
+func (d *Client) StopContainer(ctx context.Context, serviceName string) error {
+	timeout := 10
+	return d.withContainer(ctx, serviceName, func(containerID string) error {
+		_, err := d.cli.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+		return err
+	})
+}
+
+func (d *Client) RestartContainer(ctx context.Context, serviceName string) error {
+	timeout := 10
+	return d.withContainer(ctx, serviceName, func(containerID string) error {
+		_, err := d.cli.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{Timeout: &timeout})
+		return err
+	})
 }
 
 func (d *Client) ComposePath() string {
