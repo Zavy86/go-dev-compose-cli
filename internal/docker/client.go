@@ -1,7 +1,6 @@
 package docker
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -72,70 +71,6 @@ func (d *Client) StreamLogs(ctx context.Context, serviceName string, writer io.W
 	defer out.Close()
 
 	return demuxMobyStream(out, writer)
-}
-
-func (d *Client) StreamAllLogs(ctx context.Context, writer io.Writer) error {
-	res, err := d.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
-	if err != nil {
-		return err
-	}
-
-	type target struct {
-		id   string
-		name string
-	}
-	var targets []target
-
-	for _, c := range res.Items {
-		proj := c.Labels["com.docker.compose.project"]
-		svc := c.Labels["com.docker.compose.service"]
-
-		if proj == d.projectName && svc != "" {
-			targets = append(targets, target{id: c.ID, name: svc})
-		}
-	}
-
-	if len(targets) == 0 {
-		return fmt.Errorf("no container found for project %s", d.projectName)
-	}
-
-	for _, t := range targets {
-		go func(containerID, serviceName string) {
-			options := client.ContainerLogsOptions{
-				ShowStdout: true,
-				ShowStderr: true,
-				Follow:     true,
-				Tail:       "50",
-			}
-
-			out, err := d.cli.ContainerLogs(ctx, containerID, options)
-			if err != nil {
-				return
-			}
-			defer out.Close()
-
-			pr, pw := io.Pipe()
-
-			go func() {
-				_ = demuxMobyStream(out, pw)
-				pw.Close()
-			}()
-
-			scanner := bufio.NewScanner(pr)
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					line := scanner.Text()
-					fmt.Fprintf(writer, "[cyan][%s][-]\t%s\n", serviceName, line)
-				}
-			}
-		}(t.id, t.name)
-	}
-
-	<-ctx.Done()
-	return nil
 }
 
 func (d *Client) GetServicesStatus(ctx context.Context) (map[string]string, error) {

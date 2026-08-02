@@ -14,7 +14,7 @@ management, and log streaming.
 - displays container statuses with automatic refresh;
 - starts and stops the entire Compose project;
 - starts, stops, and restarts an individual container;
-- streams logs for the whole project or the selected service;
+- streams logs for the selected service;
 - provides an interactive terminal interface built with `tview` and `tcell`.
 
 ## Prerequisites

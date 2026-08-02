@@ -15,8 +15,6 @@ import (
 	"github.com/Zavy86/go-dev-compose-cli/internal/docker"
 )
 
-const projectSelectionKey = "__ALL__"
-
 type ServiceState struct {
 	Info   config.ServiceInfo
 	Status string
@@ -57,8 +55,10 @@ func NewUI(services []config.ServiceInfo, statusMsg string, dockerCli *docker.Cl
 
 	go ui.startStatusPolling()
 
-	ui.selectedService = projectSelectionKey
-	ui.attachLogs(ui.selectedService)
+	if len(ui.Services) > 0 {
+		ui.selectedService = ui.Services[0].Info.Name
+		ui.attachLogs(ui.selectedService)
+	}
 
 	return ui
 }
@@ -131,14 +131,10 @@ func (ui *UI) renderServices() {
 
 func (ui *UI) setupEvents() {
 	ui.List.SetChangedFunc(func(index int, mainText string, secondaryText string, shortcut rune) {
-		var target string
-		if index == 0 {
-			target = projectSelectionKey
-		} else if index-1 >= 0 && index-1 < len(ui.Services) {
-			target = ui.Services[index-1].Info.Name
-		} else {
+		if index < 0 || index >= len(ui.Services) {
 			return
 		}
+		target := ui.Services[index].Info.Name
 
 		if target != ui.selectedService {
 			ui.selectedService = target
@@ -278,11 +274,7 @@ func (ui *UI) attachLogs(target string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ui.logCancelCtx = cancel
 
-	if target == projectSelectionKey {
-		fmt.Fprintf(ui.Logs, "[green]--- Streaming %s Logs ---[-]\n", ui.DockerClient.ProjectName())
-	} else {
-		fmt.Fprintf(ui.Logs, "[yellow]--- Streaming %s Logs ---[-]\n", target)
-	}
+	fmt.Fprintf(ui.Logs, "[yellow]--- Streaming %s Logs ---[-]\n", target)
 
 	ansiWriter := tview.ANSIWriter(ui.Logs)
 	uiWriter := &uiLogWriter{
@@ -292,12 +284,7 @@ func (ui *UI) attachLogs(target string) {
 	}
 
 	go func() {
-		var err error
-		if target == projectSelectionKey {
-			err = ui.DockerClient.StreamAllLogs(ctx, uiWriter)
-		} else {
-			err = ui.DockerClient.StreamLogs(ctx, target, uiWriter)
-		}
+		err := ui.DockerClient.StreamLogs(ctx, target, uiWriter)
 
 		if err != nil && ctx.Err() == nil {
 			ui.App.QueueUpdateDraw(func() {
@@ -351,16 +338,11 @@ func (ui *UI) runMassAction(action string, fn func(ctx context.Context) error) {
 func (ui *UI) runSingleContainerAction(action string, fn func(ctx context.Context, svc string) error) {
 	idx := ui.List.GetCurrentItem()
 
-	if idx == 0 {
-		fmt.Fprintf(ui.Logs, "\n[yellow]Select a single container to execute %s[-]\n", action)
+	if idx < 0 || idx >= len(ui.Services) {
 		return
 	}
 
-	if idx-1 < 0 || idx-1 >= len(ui.Services) {
-		return
-	}
-
-	svcName := ui.Services[idx-1].Info.Name
+	svcName := ui.Services[idx].Info.Name
 	fmt.Fprintf(ui.Logs, "\n[blue]Executing %s on [%s]...[-]\n", action, svcName)
 	ui.Logs.ScrollToEnd()
 
